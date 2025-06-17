@@ -92,7 +92,8 @@ app.get('/send-email', async (req, res) => {
   }
 
   const emailId = 'campaign-lite';
-  const pixelUrl = `https://your-deployed-url.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
+  const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
+  // const pixelUrl = `https://your-deployed-url.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
 
   console.log(`✉️ Sending email to: ${to}`);
   console.log(`🖼️ Tracking Pixel URL: ${pixelUrl}`);
@@ -163,6 +164,8 @@ app.get('/', (req, res) => {
 });
 
 
-app.listen(3000, () => {
-  console.log('🚀 Server running at http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
+
