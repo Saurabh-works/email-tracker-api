@@ -1,3 +1,4 @@
+// server.js or index.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -11,12 +12,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect(
-  process.env.MONGO_URI,
-  { useNewUrlParser: true, useUnifiedTopology: true }
-)
-.then(() => console.log('✅ MongoDB connected'))
-.catch(err => console.error('❌ MongoDB error:', err));
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.error('❌ MongoDB error:', err));
 
 const openSchema = new mongoose.Schema({
   emailId: String,
@@ -29,59 +27,62 @@ const openSchema = new mongoose.Schema({
   browser: String,
   os: String,
   timestamp: Date,
+  type: String, // 'open' or 'click'
 });
 const Open = mongoose.model('Open', openSchema);
 
-// Known bots or services (to avoid logging them)
 const isBot = (userAgent = '') => {
   const botPatterns = [
     /google/i, /gmail/i, /yahoo/i, /outlook/i,
-    /bot/i, /spider/i, /crawler/i, /headless/i,
-    /phantomjs/i, /pingdom/i
+    /bot/i, /spider/i, /crawler/i, /headless/i, /phantomjs/i,
   ];
   return botPatterns.some(pattern => pattern.test(userAgent));
 };
 
-app.get('/track-pixel', async (req, res) => {
+const logInteraction = async (req, res, type = 'open') => {
   const ip = requestIp.getClientIp(req) || '8.8.8.8';
   const { emailId, recipientId } = req.query;
-  const ua = uaParser(req.headers['user-agent']);
   const userAgent = req.headers['user-agent'] || '';
+  const ua = uaParser(userAgent);
 
-  console.log(`📍 /track-pixel HIT from ${userAgent}`);
-
-  // Skip bot/preview hits
   if (isBot(userAgent)) {
     console.log('🚫 Bot detected. Skipping log.');
-  } else {
-    let geo = {};
-    try {
-      const geoRes = await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`);
-      geo = geoRes.data;
-    } catch (e) {
-      console.log('⚠️ Geo lookup failed:', e.message);
-    }
-
-    const log = new Open({
-      emailId,
-      recipientId,
-      ip,
-      city: geo.city,
-      region: geo.region,
-      country: geo.country,
-      device: ua.device?.type || 'desktop',
-      browser: ua.browser?.name || '',
-      os: ua.os?.name || '',
-      timestamp: new Date(),
-    });
-
-    try {
-      await log.save();
-      console.log('✅ Log saved');
-    } catch (err) {
-      console.error('❌ Log save error:', err.message);
-    }
+    return;
   }
+
+  let geo = {};
+  try {
+    const geoRes = await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`);
+    geo = geoRes.data;
+  } catch (e) {
+    console.log('⚠️ Geo lookup failed:', e.message);
+  }
+
+  const log = new Open({
+    emailId,
+    recipientId,
+    ip,
+    city: geo.city,
+    region: geo.region,
+    country: geo.country,
+    device: ua.device?.type || 'desktop',
+    browser: ua.browser?.name || '',
+    os: ua.os?.name || '',
+    timestamp: new Date(),
+    type,
+  });
+
+  try {
+    await log.save();
+    console.log(`✅ ${type.toUpperCase()} log saved for`, recipientId);
+  } catch (err) {
+    console.error('❌ Log save error:', err.message);
+  }
+};
+
+// Pixel route
+app.get('/track-pixel', async (req, res) => {
+  await logInteraction(req, res, 'open');
 
   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
   res.writeHead(200, {
@@ -91,16 +92,24 @@ app.get('/track-pixel', async (req, res) => {
   res.end(pixel);
 });
 
+// Click route
+app.get('/track-click', async (req, res) => {
+  await logInteraction(req, res, 'click');
+  res.redirect('https://yourwebsite.com/thank-you'); // change this to your desired URL
+});
+
 app.get('/send-email', async (req, res) => {
   const to = req.query.to;
   if (!to) return res.status(400).json({ error: 'Missing recipient email' });
 
   const emailId = 'campaign-lite';
   const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
+  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
 
   const html = `
     <h3>Hello 👋</h3>
-    <p>This email contains a tracking pixel.</p>
+    <p>This email contains a tracking pixel and a tracked link.</p>
+    <p><a href="${clickUrl}">Click here</a> to visit our site.</p>
     <img src="${pixelUrl}" width="1" height="1" style="display:none;" />
   `;
 
@@ -132,9 +141,9 @@ app.get('/opens-summary', async (req, res) => {
     const data = await Open.aggregate([
       {
         $group: {
-          _id: { recipientId: "$recipientId", emailId: "$emailId" },
-          openCount: { $sum: 1 },
-          lastOpened: { $max: "$timestamp" },
+          _id: { recipientId: "$recipientId", emailId: "$emailId", type: "$type" },
+          count: { $sum: 1 },
+          lastTime: { $max: "$timestamp" },
         },
       },
     ]);
@@ -154,7 +163,7 @@ app.get('/opens-details', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('✅ Email Tracker Backend is Running!');
+  res.send('✅ Email Tracker Backend Running!');
 });
 
 const PORT = process.env.PORT || 3000;
