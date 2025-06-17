@@ -1,4 +1,3 @@
-// server.js or index.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -80,10 +79,9 @@ const logInteraction = async (req, res, type = 'open') => {
   }
 };
 
-// Pixel route
+// Pixel
 app.get('/track-pixel', async (req, res) => {
   await logInteraction(req, res, 'open');
-
   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
   res.writeHead(200, {
     'Content-Type': 'image/gif',
@@ -92,12 +90,13 @@ app.get('/track-pixel', async (req, res) => {
   res.end(pixel);
 });
 
-// Click route
+// Click
 app.get('/track-click', async (req, res) => {
   await logInteraction(req, res, 'click');
-  res.redirect('https://yourwebsite.com/thank-you'); // change this to your desired URL
+  res.redirect('https://yourwebsite.com/thank-you');
 });
 
+// Send email
 app.get('/send-email', async (req, res) => {
   const to = req.query.to;
   if (!to) return res.status(400).json({ error: 'Missing recipient email' });
@@ -136,6 +135,7 @@ app.get('/send-email', async (req, res) => {
   }
 });
 
+// Summary
 app.get('/opens-summary', async (req, res) => {
   try {
     const data = await Open.aggregate([
@@ -153,12 +153,23 @@ app.get('/opens-summary', async (req, res) => {
   }
 });
 
+// All logs
 app.get('/opens-details', async (req, res) => {
   try {
     const logs = await Open.find().sort({ timestamp: -1 });
     res.json(logs);
   } catch (err) {
     res.status(500).json({ error: 'Failed to get logs' });
+  }
+});
+
+// Click logs
+app.get('/clicks', async (req, res) => {
+  try {
+    const clicks = await Open.find({ type: 'click' }).sort({ timestamp: -1 });
+    res.json(clicks);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get click logs' });
   }
 });
 
