@@ -158,6 +158,11 @@ app.get('/opens-details', async (req, res) => {
   }
 });
 
+app.get('/', (req, res) => {
+  res.send('✅ Email Tracker Backend is Running!');
+});
+
+
 app.listen(3000, () => {
   console.log('🚀 Server running at http://localhost:3000');
 });
