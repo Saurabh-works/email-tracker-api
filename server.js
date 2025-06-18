@@ -77,7 +77,7 @@ app.get('/track-pixel', async (req, res) => {
 
 app.get('/track-click', async (req, res) => {
   await logEvent(req, 'click');
-  res.redirect('https://yourwebsite.com/thank-you');
+  res.redirect('https://demandmediabpm.com/');
 });
 
 app.get('/send-email', async (req, res) => {
@@ -85,8 +85,10 @@ app.get('/send-email', async (req, res) => {
   const emailId = 'campaign-lite';
   if (!to) return res.status(400).json({ error: 'Missing email' });
 
-  const pixelUrl = `${process.env.BASE_URL}/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
-  const clickUrl = `${process.env.BASE_URL}/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
+  // const pixelUrl = `${process.env.BASE_URL}/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
+  const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
+  // const clickUrl = `${process.env.BASE_URL}/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
+  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
 
   const html = `
     <p>Hello 👋<p>
