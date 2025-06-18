@@ -1,3 +1,5 @@
+// ✅ UPDATED BACKEND CODE (server.js or index.js)
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -26,56 +28,44 @@ const openSchema = new mongoose.Schema({
   browser: String,
   os: String,
   timestamp: Date,
-  type: String, // 'open' or 'click'
+  type: String,
+  count: { type: Number, default: 1 },
 });
+openSchema.index({ emailId: 1, recipientId: 1, type: 1 }, { unique: true });
 const Open = mongoose.model('Open', openSchema);
 
-const isBot = (userAgent = '') => {
-  const botPatterns = [
-    /google/i, /gmail/i, /yahoo/i, /outlook/i,
-    /bot/i, /spider/i, /crawler/i, /headless/i, /phantomjs/i,
-  ];
-  return botPatterns.some(pattern => pattern.test(userAgent));
-};
+const isBot = (ua = '') => /google|bot|crawler|preview|headless|gmail|outlook/i.test(ua);
 
 const logInteraction = async (req, res, type = 'open') => {
   const ip = requestIp.getClientIp(req) || '8.8.8.8';
   const { emailId, recipientId } = req.query;
   const userAgent = req.headers['user-agent'] || '';
+  if (!emailId || !recipientId || isBot(userAgent)) return;
+
   const ua = uaParser(userAgent);
-
-  if (isBot(userAgent)) {
-    console.log('🚫 Bot detected. Skipping log.');
-    return;
-  }
-
   let geo = {};
   try {
-    const geoRes = await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`);
-    geo = geoRes.data;
-  } catch (e) {
-    console.log('⚠️ Geo lookup failed:', e.message);
-  }
+    const g = await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`);
+    geo = g.data;
+  } catch {}
 
-  const log = new Open({
-    emailId,
-    recipientId,
-    ip,
-    city: geo.city,
-    region: geo.region,
-    country: geo.country,
-    device: ua.device?.type || 'desktop',
-    browser: ua.browser?.name || '',
-    os: ua.os?.name || '',
-    timestamp: new Date(),
-    type,
-  });
+  const update = {
+    $set: {
+      city: geo.city,
+      region: geo.region,
+      country: geo.country,
+      device: ua.device?.type || 'desktop',
+      browser: ua.browser?.name || '',
+      os: ua.os?.name || '',
+      timestamp: new Date(),
+    },
+    $inc: { count: 1 },
+  };
 
   try {
-    await log.save();
-    console.log(`✅ ${type.toUpperCase()} log saved for`, recipientId);
+    await Open.updateOne({ emailId, recipientId, type }, update, { upsert: true });
   } catch (err) {
-    console.error('❌ Log save error:', err.message);
+    console.error('Log save error:', err.message);
   }
 };
 
@@ -96,18 +86,13 @@ app.get('/track-click', async (req, res) => {
 
 app.get('/send-email', async (req, res) => {
   const to = req.query.to;
+  const emailId = 'campaign-lite';
   if (!to) return res.status(400).json({ error: 'Missing recipient email' });
 
-  const emailId = 'campaign-lite';
-  const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
-  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
+  const pixelUrl = `${process.env.BASE_URL}/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
+  const clickUrl = `${process.env.BASE_URL}/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
 
-  const html = `
-    <h3>Hello 👋</h3>
-    <p>This email contains a tracking pixel and a tracked link.</p>
-    <p><a href="${clickUrl}">Click here</a> to visit our site.</p>
-    <img src="${pixelUrl}" width="1" height="1" style="display:none;" />
-  `;
+  const html = `<p><a href="${clickUrl}">Click here</a></p><img src="${pixelUrl}" width="1" height="1" style="display:none;" />`;
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -118,32 +103,17 @@ app.get('/send-email', async (req, res) => {
   });
 
   try {
-    await transporter.sendMail({
-      from: `"Tracker" <${process.env.MAIL_USER}>`,
-      to,
-      subject: 'Tracked Email',
-      html,
-    });
-    console.log('✅ Email sent to:', to);
+    await transporter.sendMail({ from: process.env.MAIL_USER, to, subject: 'Tracked Email', html });
     res.json({ message: 'Email sent' });
   } catch (err) {
-    console.error('❌ Email send error:', err.message);
     res.status(500).json({ error: 'Failed to send email' });
   }
 });
 
 app.get('/opens-summary', async (req, res) => {
   try {
-    const data = await Open.aggregate([
-      {
-        $group: {
-          _id: { recipientId: "$recipientId", emailId: "$emailId", type: "$type" },
-          count: { $sum: 1 },
-          lastTime: { $max: "$timestamp" },
-        },
-      },
-    ]);
-    res.json(data);
+    const summary = await Open.find({}, { _id: 0, recipientId: 1, emailId: 1, count: 1, timestamp: 1, type: 1 });
+    res.json(summary);
   } catch (err) {
     res.status(500).json({ error: 'Failed to get summary' });
   }
@@ -167,46 +137,43 @@ app.get('/clicks', async (req, res) => {
   }
 });
 
-// 📊 Campaign Analytics
 app.get('/campaign-analytics', async (req, res) => {
   try {
     const emailId = req.query.emailId || 'campaign-lite';
-
-    const [opens, clicks, totalRecipients] = await Promise.all([
+    const [opens, clicks] = await Promise.all([
       Open.find({ emailId, type: 'open' }),
       Open.find({ emailId, type: 'click' }),
-      Open.distinct('recipientId', { emailId, type: 'open' }),
     ]);
 
-    const uniqueOpeners = [...new Set(opens.map(o => o.recipientId))];
-    const uniqueClickers = [...new Set(clicks.map(c => c.recipientId))];
+    const uniqueOpens = opens.length;
+    const totalOpens = opens.reduce((acc, o) => acc + o.count, 0);
+    const uniqueClicks = clicks.length;
+    const totalClicks = clicks.reduce((acc, c) => acc + c.count, 0);
+    const recipients = await Open.distinct('recipientId', { emailId });
 
-    const openRate = (uniqueOpeners.length / totalRecipients.length) * 100 || 0;
-    const clickRate = (uniqueClickers.length / totalRecipients.length) * 100 || 0;
+    const openRate = (uniqueOpens / recipients.length) * 100 || 0;
+    const clickRate = (uniqueClicks / recipients.length) * 100 || 0;
 
     const lastActivity = [...opens, ...clicks].sort((a, b) => b.timestamp - a.timestamp)[0]?.timestamp;
 
-    res.json({
-      totalEmailsSent: totalRecipients.length,
-      totalOpens: opens.length,
-      uniqueOpens: uniqueOpeners.length,
-      openRate: openRate.toFixed(2) + '%',
-      totalClicks: clicks.length,
-      uniqueClicks: uniqueClickers.length,
-      clickRate: clickRate.toFixed(2) + '%',
-      lastActivity: lastActivity ? new Date(lastActivity) : null,
-    });
+    res.json([
+      {
+        emailId,
+        totalSent: recipients.length,
+        uniqueOpens,
+        totalOpens,
+        uniqueClicks,
+        totalClicks,
+        openRate,
+        clickRate,
+        lastActivity,
+      },
+    ]);
   } catch (err) {
-    console.error('❌ Analytics error:', err.message);
     res.status(500).json({ error: 'Failed to get analytics' });
   }
 });
 
-app.get('/', (req, res) => {
-  res.send('✅ Email Tracker Backend Running!');
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+app.listen(process.env.PORT || 3000, () => {
+  console.log('🚀 Server ready');
 });
