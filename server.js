@@ -79,7 +79,6 @@ const logInteraction = async (req, res, type = 'open') => {
   }
 };
 
-// Pixel
 app.get('/track-pixel', async (req, res) => {
   await logInteraction(req, res, 'open');
   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
@@ -90,13 +89,11 @@ app.get('/track-pixel', async (req, res) => {
   res.end(pixel);
 });
 
-// Click
 app.get('/track-click', async (req, res) => {
   await logInteraction(req, res, 'click');
   res.redirect('https://yourwebsite.com/thank-you');
 });
 
-// Send email
 app.get('/send-email', async (req, res) => {
   const to = req.query.to;
   if (!to) return res.status(400).json({ error: 'Missing recipient email' });
@@ -135,7 +132,6 @@ app.get('/send-email', async (req, res) => {
   }
 });
 
-// Summary
 app.get('/opens-summary', async (req, res) => {
   try {
     const data = await Open.aggregate([
@@ -153,7 +149,6 @@ app.get('/opens-summary', async (req, res) => {
   }
 });
 
-// All logs
 app.get('/opens-details', async (req, res) => {
   try {
     const logs = await Open.find().sort({ timestamp: -1 });
@@ -163,13 +158,47 @@ app.get('/opens-details', async (req, res) => {
   }
 });
 
-// Click logs
 app.get('/clicks', async (req, res) => {
   try {
     const clicks = await Open.find({ type: 'click' }).sort({ timestamp: -1 });
     res.json(clicks);
   } catch (err) {
     res.status(500).json({ error: 'Failed to get click logs' });
+  }
+});
+
+// 📊 Campaign Analytics
+app.get('/campaign-analytics', async (req, res) => {
+  try {
+    const emailId = req.query.emailId || 'campaign-lite';
+
+    const [opens, clicks, totalRecipients] = await Promise.all([
+      Open.find({ emailId, type: 'open' }),
+      Open.find({ emailId, type: 'click' }),
+      Open.distinct('recipientId', { emailId, type: 'open' }),
+    ]);
+
+    const uniqueOpeners = [...new Set(opens.map(o => o.recipientId))];
+    const uniqueClickers = [...new Set(clicks.map(c => c.recipientId))];
+
+    const openRate = (uniqueOpeners.length / totalRecipients.length) * 100 || 0;
+    const clickRate = (uniqueClickers.length / totalRecipients.length) * 100 || 0;
+
+    const lastActivity = [...opens, ...clicks].sort((a, b) => b.timestamp - a.timestamp)[0]?.timestamp;
+
+    res.json({
+      totalEmailsSent: totalRecipients.length,
+      totalOpens: opens.length,
+      uniqueOpens: uniqueOpeners.length,
+      openRate: openRate.toFixed(2) + '%',
+      totalClicks: clicks.length,
+      uniqueClicks: uniqueClickers.length,
+      clickRate: clickRate.toFixed(2) + '%',
+      lastActivity: lastActivity ? new Date(lastActivity) : null,
+    });
+  } catch (err) {
+    console.error('❌ Analytics error:', err.message);
+    res.status(500).json({ error: 'Failed to get analytics' });
   }
 });
 
