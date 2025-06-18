@@ -167,7 +167,7 @@ mongoose.connect(process.env.MONGO_URI)
 const logSchema = new mongoose.Schema({
   campaignId: String,
   recipientId: String,
-  type: String,
+  type: String, // 'open' | 'click'
   timestamp: Date,
   ip: String,
   city: String,
@@ -175,12 +175,11 @@ const logSchema = new mongoose.Schema({
   country: String,
   device: String,
   browser: String,
-  os: String,
+  os: String
 });
-logSchema.index({ campaignId: 1, recipientId: 1, type: 1, timestamp: 1 });
 const Log = mongoose.model('Log', logSchema);
 
-const isBot = ua => /google|bot|crawler|preview|headless/i.test(ua);
+const isBot = (ua) => /bot|crawler|preview|gmail|google|outlook|headless/i.test(ua);
 
 async function logEvent(req, type) {
   const ip = requestIp.getClientIp(req) || '';
@@ -213,17 +212,17 @@ app.get('/track-pixel', async (req, res) => {
   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
   res.writeHead(200, {
     'Content-Type': 'image/gif',
-    'Content-Length': pixel.length,
     'Cache-Control': 'no-cache, no-store, must-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
+    'Content-Length': pixel.length
   });
   res.end(pixel);
-  logEvent(req, 'open');
+  logEvent(req, 'open'); // async logging
 });
 
 app.get('/track-click', async (req, res) => {
-  logEvent(req, 'click');
+  logEvent(req, 'click'); // async logging
   res.redirect('https://demandmediabpm.com/');
 });
 
@@ -245,6 +244,7 @@ app.get('/send-email', async (req, res) => {
     service: 'gmail',
     auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS }
   });
+
   await transporter.sendMail({ from: process.env.MAIL_USER, to, subject: 'Tracked Email', html });
   res.json({ message: 'Email sent' });
 });
@@ -258,32 +258,31 @@ app.get('/campaign-analytics', async (req, res) => {
     Log.distinct('recipientId', { campaignId })
   ]);
 
-  const openCounts = {};
-  for (let o of opens) {
-    openCounts[o.recipientId] = (openCounts[o.recipientId] || 0) + 1;
-  }
+  const openMap = {};
+  const clickMap = {};
 
-  const clickCounts = {};
-  for (let c of clicks) {
-    clickCounts[c.recipientId] = (clickCounts[c.recipientId] || 0) + 1;
-  }
+  opens.forEach(o => openMap[o.recipientId] = (openMap[o.recipientId] || 0) + 1);
+  clicks.forEach(c => clickMap[c.recipientId] = (clickMap[c.recipientId] || 0) + 1);
 
-  const uniqueOpens = Object.keys(openCounts).length;
+  const uniqueOpens = Object.keys(openMap).length;
   const totalOpens = opens.length;
-  const uniqueClicks = Object.keys(clickCounts).length;
+  const uniqueClicks = Object.keys(clickMap).length;
   const totalClicks = clicks.length;
   const totalSent = recipients.length;
+
   const openRate = totalSent ? (uniqueOpens / totalSent) * 100 : 0;
   const clickRate = totalSent ? (uniqueClicks / totalSent) * 100 : 0;
-  const lastActivity = Math.max(
-    ...[...opens, ...clicks].map(l => l.timestamp.getTime()),
-    0
-  );
+  const lastActivity = Math.max(...[...opens, ...clicks].map(l => l.timestamp?.getTime() || 0));
 
   res.json([{
     emailId: campaignId,
-    totalSent, uniqueOpens, totalOpens,
-    uniqueClicks, totalClicks, openRate, clickRate,
+    totalSent,
+    uniqueOpens,
+    totalOpens,
+    openRate,
+    uniqueClicks,
+    totalClicks,
+    clickRate,
     lastActivity: lastActivity ? new Date(lastActivity) : null
   }]);
 });
@@ -326,7 +325,7 @@ app.get('/clicks', async (_, res) => {
         country: { $last: "$country" },
         device: { $last: "$device" },
         browser: { $last: "$browser" },
-        os: { $last: "$os" }
+        os: { $last: "$os" },
       }
     },
     {
@@ -335,9 +334,9 @@ app.get('/clicks', async (_, res) => {
         campaignId: "$_id.campaignId",
         recipientId: "$_id.recipientId",
         count: 1,
+        timestamp: 1,
         ip: 1, city: 1, region: 1, country: 1,
         device: 1, browser: 1, os: 1,
-        timestamp: 1,
         _id: 0
       }
     }
@@ -346,3 +345,4 @@ app.get('/clicks', async (_, res) => {
 });
 
 app.listen(process.env.PORT || 3000, () => console.log('🚀 Server running'));
+
