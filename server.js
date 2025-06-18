@@ -231,7 +231,7 @@ app.get('/send-email', async (req, res) => {
   if (!to) return res.status(400).json({ error: 'Missing email' });
 
   const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
-  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
+  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}`;
 
   const html = `
     <p>Hello 👋<p>
@@ -311,24 +311,36 @@ app.get('/opens-summary', async (_, res) => {
 });
 
 app.get('/clicks', async (_, res) => {
-  const data = await Log.find({ type: 'click' }, {
-    _id: 0, campaignId:1, recipientId:1, ip:1, city:1, region:1, country:1, device:1, browser:1, os:1, timestamp:1
-  }).lean();
-
-  const renamed = data.map(item => ({
-    emailId: item.recipientId,
-    campaignId: item.campaignId,
-    ip: item.ip,
-    city: item.city,
-    region: item.region,
-    country: item.country,
-    device: item.device,
-    browser: item.browser,
-    os: item.os,
-    timestamp: item.timestamp
-  }));
-
-  res.json(renamed);
+  const logs = await Log.aggregate([
+    { $match: { type: 'click' } },
+    {
+      $group: {
+        _id: { campaignId: "$campaignId", recipientId: "$recipientId" },
+        count: { $sum: 1 },
+        timestamp: { $max: "$timestamp" },
+        ip: { $last: "$ip" },
+        city: { $last: "$city" },
+        region: { $last: "$region" },
+        country: { $last: "$country" },
+        device: { $last: "$device" },
+        browser: { $last: "$browser" },
+        os: { $last: "$os" }
+      }
+    },
+    {
+      $project: {
+        emailId: "$_id.recipientId",
+        campaignId: "$_id.campaignId",
+        recipientId: "$_id.recipientId",
+        count: 1,
+        ip: 1, city: 1, region: 1, country: 1,
+        device: 1, browser: 1, os: 1,
+        timestamp: 1,
+        _id: 0
+      }
+    }
+  ]);
+  res.json(logs);
 });
 
 app.listen(process.env.PORT || 3000, () => console.log('🚀 Server running'));
