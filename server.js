@@ -180,7 +180,7 @@ const logSchema = new mongoose.Schema({
 logSchema.index({ campaignId: 1, recipientId: 1, type: 1, timestamp: 1 });
 const Log = mongoose.model('Log', logSchema);
 
-const isBot = ua => /google|bot|crawler|preview|headless|gmail|outlook/i.test(ua);
+const isBot = ua => /google|bot|crawler|preview|headless/i.test(ua);
 
 async function logEvent(req, type) {
   const ip = requestIp.getClientIp(req) || '';
@@ -231,7 +231,7 @@ app.get('/send-email', async (req, res) => {
   if (!to) return res.status(400).json({ error: 'Missing email' });
 
   const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
-  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}`;
+  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
 
   const html = `
     <p>Hello 👋<p>
