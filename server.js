@@ -210,20 +210,20 @@ async function logEvent(req, type) {
 }
 
 app.get('/track-pixel', async (req, res) => {
-  res.setHeader('Content-Type', 'image/gif');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
-  res.write(pixel);
-  res.end();
-
-  // Log asynchronously
-  setTimeout(() => logEvent(req, 'open'), 0);
+  res.writeHead(200, {
+    'Content-Type': 'image/gif',
+    'Content-Length': pixel.length,
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  });
+  res.end(pixel);
+  logEvent(req, 'open');
 });
 
 app.get('/track-click', async (req, res) => {
-  await logEvent(req, 'click');
+  logEvent(req, 'click');
   res.redirect('https://demandmediabpm.com/');
 });
 
@@ -232,11 +232,11 @@ app.get('/send-email', async (req, res) => {
   const campaignId = 'campaign-lite';
   if (!to) return res.status(400).json({ error: 'Missing email' });
 
-  const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}`;
-  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}`;
+  const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
+  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${campaignId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
 
   const html = `
-    <p>Hello 👋<p>
+    <p>Hello 👋</p>
     <p><a href="${clickUrl}">Click here</a></p>
     <img src="${pixelUrl}" width="1" height="1" style="display:none;" />
   `;
