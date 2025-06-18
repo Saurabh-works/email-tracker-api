@@ -223,7 +223,7 @@ app.get('/track-pixel', async (req, res) => {
 });
 
 app.get('/track-click', async (req, res) => {
-  setTimeout(() => logEvent(req, 'click'), 0);
+  await logEvent(req, 'click');
   res.redirect('https://demandmediabpm.com/');
 });
 
