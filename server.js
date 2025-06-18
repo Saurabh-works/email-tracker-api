@@ -165,10 +165,9 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.error('❌ MongoDB error:', err));
 
 const logSchema = new mongoose.Schema({
-  campaignId: String, // changed from emailId
+  campaignId: String,
   recipientId: String,
-  type: String,           // 'open' or 'click'
-  count: { type: Number, default: 1 },
+  type: String,
   timestamp: Date,
   ip: String,
   city: String,
@@ -178,7 +177,7 @@ const logSchema = new mongoose.Schema({
   browser: String,
   os: String,
 });
-logSchema.index({ campaignId: 1, recipientId: 1, type: 1 }, { unique: true });
+logSchema.index({ campaignId: 1, recipientId: 1, type: 1, timestamp: 1 });
 const Log = mongoose.model('Log', logSchema);
 
 const isBot = ua => /google|bot|crawler|preview|headless|gmail|outlook/i.test(ua);
@@ -195,23 +194,19 @@ async function logEvent(req, type) {
     geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
   } catch {}
 
-  await Log.updateOne(
-    { campaignId, recipientId, type },
-    {
-      $inc: { count: 1 },
-      $set: {
-        timestamp: new Date(),
-        ip,
-        city: geo.city || '',
-        region: geo.region || '',
-        country: geo.country || '',
-        device: device.type || 'desktop',
-        browser: browser.name || '',
-        os: os.name || '',
-      },
-    },
-    { upsert: true }
-  );
+  await Log.create({
+    campaignId,
+    recipientId,
+    type,
+    timestamp: new Date(),
+    ip,
+    city: geo.city || '',
+    region: geo.region || '',
+    country: geo.country || '',
+    device: device.type || 'desktop',
+    browser: browser.name || '',
+    os: os.name || '',
+  });
 }
 
 app.get('/track-pixel', async (req, res) => {
@@ -254,19 +249,30 @@ app.get('/send-email', async (req, res) => {
 
 app.get('/campaign-analytics', async (req, res) => {
   const campaignId = req.query.emailId || 'campaign-lite';
+
   const [opens, clicks, recipients] = await Promise.all([
     Log.find({ campaignId, type: 'open' }),
     Log.find({ campaignId, type: 'click' }),
     Log.distinct('recipientId', { campaignId })
   ]);
 
-  const uniqueOpens = opens.length;
-  const totalOpens = opens.reduce((s,o) => s + o.count, 0);
-  const uniqueClicks = clicks.length;
-  const totalClicks = clicks.reduce((s,c) => s + c.count, 0);
+  const openCounts = {};
+  for (let o of opens) {
+    openCounts[o.recipientId] = (openCounts[o.recipientId] || 0) + 1;
+  }
+
+  const clickCounts = {};
+  for (let c of clicks) {
+    clickCounts[c.recipientId] = (clickCounts[c.recipientId] || 0) + 1;
+  }
+
+  const uniqueOpens = Object.keys(openCounts).length;
+  const totalOpens = opens.length;
+  const uniqueClicks = Object.keys(clickCounts).length;
+  const totalClicks = clicks.length;
   const totalSent = recipients.length;
-  const openRate = totalSent ? (uniqueOpens/totalSent)*100 : 0;
-  const clickRate = totalSent ? (uniqueClicks/totalSent)*100 : 0;
+  const openRate = totalSent ? (uniqueOpens / totalSent) * 100 : 0;
+  const clickRate = totalSent ? (uniqueClicks / totalSent) * 100 : 0;
   const lastActivity = Math.max(
     ...[...opens, ...clicks].map(l => l.timestamp.getTime()),
     0
@@ -281,19 +287,27 @@ app.get('/campaign-analytics', async (req, res) => {
 });
 
 app.get('/opens-summary', async (_, res) => {
-  const data = await Log.find({ type: 'open' }, {
-    _id: 0, campaignId: 1, recipientId: 1, count: 1, timestamp: 1
-  }).lean();
-
-  const renamed = data.map(item => ({
-    emailId: item.recipientId,
-    campaignId: item.campaignId,
-    recipientId: item.recipientId,
-    count: item.count,
-    timestamp: item.timestamp
-  }));
-
-  res.json(renamed);
+  const logs = await Log.aggregate([
+    { $match: { type: 'open' } },
+    {
+      $group: {
+        _id: { campaignId: "$campaignId", recipientId: "$recipientId" },
+        count: { $sum: 1 },
+        timestamp: { $max: "$timestamp" }
+      }
+    },
+    {
+      $project: {
+        emailId: "$_id.recipientId",
+        campaignId: "$_id.campaignId",
+        recipientId: "$_id.recipientId",
+        count: 1,
+        timestamp: 1,
+        _id: 0
+      }
+    }
+  ]);
+  res.json(logs);
 });
 
 app.get('/clicks', async (_, res) => {
