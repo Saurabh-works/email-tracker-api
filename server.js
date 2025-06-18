@@ -157,7 +157,12 @@ const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+app.use(cors({
+  origin: ["http://localhost:3000"], // ✅ allow your React local dev environment
+  credentials: true
+}));
+
 app.use(express.json());
 
 mongoose.connect(process.env.MONGO_URI)
