@@ -148,6 +148,85 @@
 
 
 // === BACKEND (server.js) ===
+// const express = require('express');
+// const mongoose = require('mongoose');
+// const cors = require('cors');
+// const requestIp = require('request-ip');
+// const uaParser = require('ua-parser-js');
+// const axios = require('axios');
+// require('dotenv').config();
+
+// const app = express();
+// app.use(cors());
+// app.use(express.json());
+
+// mongoose.connect(process.env.MONGO_URI)
+//   .then(() => console.log('✅ MongoDB connected'))
+//   .catch(err => console.error('❌ MongoDB error:', err));
+
+// const logSchema = new mongoose.Schema({
+//   emailId: String,
+//   recipientId: String,
+//   type: String,           // 'open' or 'click'
+//   count: { type: Number, default: 1 },
+//   timestamp: Date,
+//   ip: String,
+//   city: String,
+//   region: String,
+//   country: String,
+//   device: String,
+//   browser: String,
+//   os: String,
+// });
+// logSchema.index({ emailId: 1, recipientId: 1, type: 1 }, { unique: true });
+// const Log = mongoose.model('Log', logSchema);
+
+// const isBot = ua => /google|bot|crawler|preview|headless|gmail|outlook/i.test(ua);
+
+// async function logEvent(req, type) {
+//   const ip = requestIp.getClientIp(req) || '';
+//   const ua = req.headers['user-agent'] || '';
+//   const { emailId, recipientId } = req.query;
+//   if (!emailId || !recipientId || isBot(ua)) return;
+
+//   const { device, browser, os } = uaParser(ua);
+//   let geo = {};
+//   try {
+//     geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
+//   } catch {}
+
+//   await Log.updateOne(
+//     { emailId, recipientId, type },
+//     {
+//       $inc: { count: 1 },
+//       $set: {
+//         timestamp: new Date(),
+//         ip,
+//         city: geo.city || '',
+//         region: geo.region || '',
+//         country: geo.country || '',
+//         device: device.type || 'desktop',
+//         browser: browser.name || '',
+//         os: os.name || '',
+//       },
+//     },
+//     { upsert: true }
+//   );
+// }
+
+// app.get('/track-pixel', async (req, res) => {
+//   await logEvent(req, 'open');
+//   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
+//   res.writeHead(200, {
+//     'Content-Type': 'image/gif',
+//     'Content-Length': pixel.length,
+//     'Cache-Control': 'no-cache, no-store, must-revalidate',
+//   });
+//   res.end(pixel);
+// });
+
+//...................................................................................................
+// === BACKEND (server.js) ===
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -181,13 +260,21 @@ const logSchema = new mongoose.Schema({
 logSchema.index({ emailId: 1, recipientId: 1, type: 1 }, { unique: true });
 const Log = mongoose.model('Log', logSchema);
 
-const isBot = ua => /google|bot|crawler|preview|headless|gmail|outlook/i.test(ua);
+// ✅ UPDATED: Relaxed bot detection to allow Gmail/Outlook
+const isBot = ua => /bot|crawler|preview|headless/i.test(ua); // Removed "gmail|outlook"
 
 async function logEvent(req, type) {
   const ip = requestIp.getClientIp(req) || '';
   const ua = req.headers['user-agent'] || '';
   const { emailId, recipientId } = req.query;
-  if (!emailId || !recipientId || isBot(ua)) return;
+
+  // ✅ NEW: Added log to check if route is hit
+  console.log(`📩 ${type.toUpperCase()} pixel requested from UA:`, ua, 'IP:', ip, 'Recipient:', recipientId);
+
+  if (!emailId || !recipientId || isBot(ua)) {
+    console.log('⚠️ Skipped logging due to missing data or bot UA');
+    return;
+  }
 
   const { device, browser, os } = uaParser(ua);
   let geo = {};
@@ -216,6 +303,7 @@ async function logEvent(req, type) {
 
 app.get('/track-pixel', async (req, res) => {
   await logEvent(req, 'open');
+
   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
   res.writeHead(200, {
     'Content-Type': 'image/gif',
