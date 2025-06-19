@@ -302,6 +302,71 @@ const isBot = ua => /bot|crawler|preview|headless/i.test(ua); // Removed "gmail|
 // }
 //......................................................................
 
+// async function logEvent(req, type) {
+//   const ip = requestIp.getClientIp(req) || '';
+//   const ua = req.headers['user-agent'] || '';
+//   const { emailId, recipientId } = req.query;
+
+//   console.log(`📩 ${type.toUpperCase()} pixel requested from UA:`, ua, 'IP:', ip, 'Recipient:', recipientId);
+
+//   if (!emailId || !recipientId) {
+//     console.log('⚠️ Skipped logging: missing emailId or recipientId');
+//     return;
+//   }
+
+//   const { device, browser, os } = uaParser(ua);
+//   let geo = {};
+//   try {
+//     geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
+//   } catch {}
+
+//   const existingLog = await Log.findOne({ emailId, recipientId, type });
+
+//   if (!existingLog) {
+//     // 🟡 NEW ENTRY: Create with count 0
+//     await Log.create({
+//       emailId,
+//       recipientId,
+//       type,
+//       count: 0,
+//       timestamp: new Date(),
+//       ip,
+//       city: geo.city || '',
+//       region: geo.region || '',
+//       country: geo.country || '',
+//       device: device.type || 'desktop',
+//       browser: browser.name || '',
+//       os: os.name || '',
+//     });
+//     console.log(`🟨 Created new log for ${type} with count 0`);
+//   } else {
+//     // 🟢 EXISTING: Increment only if not a preload
+//     if (!isBot(ua)) {
+//       await Log.updateOne(
+//         { emailId, recipientId, type },
+//         {
+//           $inc: { count: 1 },
+//           $set: {
+//             timestamp: new Date(),
+//             ip,
+//             city: geo.city || '',
+//             region: geo.region || '',
+//             country: geo.country || '',
+//             device: device.type || 'desktop',
+//             browser: browser.name || '',
+//             os: os.name || '',
+//           },
+//         }
+//       );
+//       console.log(`✅ Count incremented for ${type}`);
+//     } else {
+//       console.log(`❌ Skipped count increment (preload/bot): ${ua}`);
+//     }
+//   }
+// }
+
+//........................................................................
+
 async function logEvent(req, type) {
   const ip = requestIp.getClientIp(req) || '';
   const ua = req.headers['user-agent'] || '';
@@ -320,15 +385,17 @@ async function logEvent(req, type) {
     geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
   } catch {}
 
+  const isReal = !isBot(ua); // ✅ Check once
+
   const existingLog = await Log.findOne({ emailId, recipientId, type });
 
   if (!existingLog) {
-    // 🟡 NEW ENTRY: Create with count 0
+    // ✅ NEW ENTRY
     await Log.create({
       emailId,
       recipientId,
       type,
-      count: 0,
+      count: isReal ? 1 : 0, // ✅ First open should count only if real
       timestamp: new Date(),
       ip,
       city: geo.city || '',
@@ -338,32 +405,33 @@ async function logEvent(req, type) {
       browser: browser.name || '',
       os: os.name || '',
     });
-    console.log(`🟨 Created new log for ${type} with count 0`);
+    console.log(`🟨 Created log for ${type} with count ${isReal ? 1 : 0}`);
+  } else if (isReal) {
+    // ✅ INCREMENT IF ALREADY EXISTS
+    await Log.updateOne(
+      { emailId, recipientId, type },
+      {
+        $inc: { count: 1 },
+        $set: {
+          timestamp: new Date(),
+          ip,
+          city: geo.city || '',
+          region: geo.region || '',
+          country: geo.country || '',
+          device: device.type || 'desktop',
+          browser: browser.name || '',
+          os: os.name || '',
+        },
+      }
+    );
+    console.log(`✅ Count incremented for ${type}`);
   } else {
-    // 🟢 EXISTING: Increment only if not a preload
-    if (!isBot(ua)) {
-      await Log.updateOne(
-        { emailId, recipientId, type },
-        {
-          $inc: { count: 1 },
-          $set: {
-            timestamp: new Date(),
-            ip,
-            city: geo.city || '',
-            region: geo.region || '',
-            country: geo.country || '',
-            device: device.type || 'desktop',
-            browser: browser.name || '',
-            os: os.name || '',
-          },
-        }
-      );
-      console.log(`✅ Count incremented for ${type}`);
-    } else {
-      console.log(`❌ Skipped count increment (preload/bot): ${ua}`);
-    }
+    console.log(`❌ Skipped increment (bot/preload)`);
   }
 }
+
+
+
 //.........................................................................
 
 app.get('/track-pixel', async (req, res) => {
