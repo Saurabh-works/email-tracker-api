@@ -385,17 +385,17 @@ async function logEvent(req, type) {
     geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
   } catch {}
 
-  const isReal = !isBot(ua); // ✅ Check once
+  const isReal = !isBot(ua);
 
   const existingLog = await Log.findOne({ emailId, recipientId, type });
 
-  if (!existingLog) {
-    // ✅ NEW ENTRY
+  if (!existingLog && isReal) {
+    // ✅ First-time real open: create with count = 1
     await Log.create({
       emailId,
       recipientId,
       type,
-      count: isReal ? 1 : 0, // ✅ First open should count only if real
+      count: 1,
       timestamp: new Date(),
       ip,
       city: geo.city || '',
@@ -405,9 +405,26 @@ async function logEvent(req, type) {
       browser: browser.name || '',
       os: os.name || '',
     });
-    console.log(`🟨 Created log for ${type} with count ${isReal ? 1 : 0}`);
+    console.log(`🟨 Created log for ${type} with count 1`);
+  } else if (!existingLog && !isReal) {
+    // 🟫 First-time bot open: create with count = 0
+    await Log.create({
+      emailId,
+      recipientId,
+      type,
+      count: 0,
+      timestamp: new Date(),
+      ip,
+      city: geo.city || '',
+      region: geo.region || '',
+      country: geo.country || '',
+      device: device.type || 'desktop',
+      browser: browser.name || '',
+      os: os.name || '',
+    });
+    console.log(`🟫 Created log for ${type} with count 0 (bot/preload)`);
   } else if (isReal) {
-    // ✅ INCREMENT IF ALREADY EXISTS
+    // ✅ Subsequent real open: increment
     await Log.updateOne(
       { emailId, recipientId, type },
       {
@@ -424,11 +441,12 @@ async function logEvent(req, type) {
         },
       }
     );
-    console.log(`✅ Count incremented for ${type}`);
+    console.log(`✅ Incremented count for ${type}`);
   } else {
-    console.log(`❌ Skipped increment (bot/preload)`);
+    console.log(`❌ Skipped increment for ${type} (bot)`);
   }
 }
+
 
 
 
