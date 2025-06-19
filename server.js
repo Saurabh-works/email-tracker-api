@@ -374,7 +374,6 @@ async function logEvent(req, type) {
 
   console.log(`📩 ${type.toUpperCase()} pixel requested from UA:`, ua, 'IP:', ip, 'Recipient:', recipientId);
 
-  // ✅ Skip if it's a bot or missing info
   if (!emailId || !recipientId || isBot(ua)) {
     console.log('⚠️ Skipped logging due to bot or missing data');
     return;
@@ -386,17 +385,15 @@ async function logEvent(req, type) {
     geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
   } catch {}
 
-  // ✅ Check if log exists already
   const existing = await Log.findOne({ emailId, recipientId, type });
 
   if (!existing) {
-    // ✅ First hit likely a preload — skip increment, but store log with count 0
-    console.log('🕵️ First-time hit, storing with count 0 (likely prefetch)');
+    // First-time (likely prefetch) → log with count = 0
     await Log.create({
       emailId,
       recipientId,
       type,
-      count: 0, // Important: don't count first hit
+      count: 0,
       timestamp: new Date(),
       ip,
       city: geo.city || '',
@@ -406,8 +403,28 @@ async function logEvent(req, type) {
       browser: browser.name || '',
       os: os.name || ''
     });
+    console.log('🕵️ First-time hit (likely prefetch), added with count 0');
+  } else if (existing.count === 0) {
+    // First real interaction → update count to 1
+    await Log.updateOne(
+      { emailId, recipientId, type },
+      {
+        $set: {
+          count: 1, // <- not increment, just set to 1
+          timestamp: new Date(),
+          ip,
+          city: geo.city || '',
+          region: geo.region || '',
+          country: geo.country || '',
+          device: device.type || 'desktop',
+          browser: browser.name || '',
+          os: os.name || ''
+        }
+      }
+    );
+    console.log('✅ First real open/click, count set to 1');
   } else {
-    // ✅ Real interaction: increment count
+    // Subsequent interactions → increment count
     await Log.updateOne(
       { emailId, recipientId, type },
       {
@@ -424,8 +441,10 @@ async function logEvent(req, type) {
         }
       }
     );
+    console.log('🔁 Repeated open/click, count incremented');
   }
 }
+
 
 
 
