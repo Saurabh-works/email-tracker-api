@@ -374,8 +374,9 @@ async function logEvent(req, type) {
 
   console.log(`📩 ${type.toUpperCase()} pixel requested from UA:`, ua, 'IP:', ip, 'Recipient:', recipientId);
 
-  if (!emailId || !recipientId) {
-    console.log('⚠️ Skipped logging: missing emailId or recipientId');
+  // ✅ Skip if it's a bot or missing info
+  if (!emailId || !recipientId || isBot(ua)) {
+    console.log('⚠️ Skipped logging due to bot or missing data');
     return;
   }
 
@@ -385,17 +386,17 @@ async function logEvent(req, type) {
     geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
   } catch {}
 
-  const isReal = !isBot(ua);
+  // ✅ Check if log exists already
+  const existing = await Log.findOne({ emailId, recipientId, type });
 
-  const existingLog = await Log.findOne({ emailId, recipientId, type });
-
-  if (!existingLog && isReal) {
-    // ✅ First-time real open: create with count = 1
+  if (!existing) {
+    // ✅ First hit likely a preload — skip increment, but store log with count 0
+    console.log('🕵️ First-time hit, storing with count 0 (likely prefetch)');
     await Log.create({
       emailId,
       recipientId,
       type,
-      count: 1,
+      count: 0, // Important: don't count first hit
       timestamp: new Date(),
       ip,
       city: geo.city || '',
@@ -403,28 +404,10 @@ async function logEvent(req, type) {
       country: geo.country || '',
       device: device.type || 'desktop',
       browser: browser.name || '',
-      os: os.name || '',
+      os: os.name || ''
     });
-    console.log(`🟨 Created log for ${type} with count 1`);
-  } else if (!existingLog && !isReal) {
-    // 🟫 First-time bot open: create with count = 0
-    await Log.create({
-      emailId,
-      recipientId,
-      type,
-      count: 0,
-      timestamp: new Date(),
-      ip,
-      city: geo.city || '',
-      region: geo.region || '',
-      country: geo.country || '',
-      device: device.type || 'desktop',
-      browser: browser.name || '',
-      os: os.name || '',
-    });
-    console.log(`🟫 Created log for ${type} with count 0 (bot/preload)`);
-  } else if (isReal) {
-    // ✅ Subsequent real open: increment
+  } else {
+    // ✅ Real interaction: increment count
     await Log.updateOne(
       { emailId, recipientId, type },
       {
@@ -437,13 +420,10 @@ async function logEvent(req, type) {
           country: geo.country || '',
           device: device.type || 'desktop',
           browser: browser.name || '',
-          os: os.name || '',
-        },
+          os: os.name || ''
+        }
       }
     );
-    console.log(`✅ Incremented count for ${type}`);
-  } else {
-    console.log(`❌ Skipped increment for ${type} (bot)`);
   }
 }
 
