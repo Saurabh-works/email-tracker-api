@@ -372,7 +372,7 @@ async function logEvent(req, type) {
   const ua = req.headers['user-agent'] || '';
   const { emailId, recipientId } = req.query;
 
-  console.log(`📩 ${type.toUpperCase()} pixel requested from UA:`, ua, 'IP:', ip, 'Recipient:', recipientId);
+  console.log(`📩 ${type.toUpperCase()} hit:`, ua, 'IP:', ip, 'Recipient:', recipientId);
 
   if (!emailId || !recipientId || isBot(ua)) {
     console.log('⚠️ Skipped logging due to bot or missing data');
@@ -385,15 +385,15 @@ async function logEvent(req, type) {
     geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
   } catch {}
 
-  const existing = await Log.findOne({ emailId, recipientId, type });
+  const log = await Log.findOne({ emailId, recipientId, type });
 
-  if (!existing) {
-    // First-time (likely prefetch) → log with count = 0
+  if (!log) {
+    // First-time creation (likely prefetch)
     await Log.create({
       emailId,
       recipientId,
       type,
-      count: 0,
+      count: 1, // ✅ Directly count = 1 on first real open/click
       timestamp: new Date(),
       ip,
       city: geo.city || '',
@@ -403,28 +403,9 @@ async function logEvent(req, type) {
       browser: browser.name || '',
       os: os.name || ''
     });
-    console.log('🕵️ First-time hit (likely prefetch), added with count 0');
-  } else if (existing.count === 0) {
-    // First real interaction → update count to 1
-    await Log.updateOne(
-      { emailId, recipientId, type },
-      {
-        $set: {
-          count: 1, // <- not increment, just set to 1
-          timestamp: new Date(),
-          ip,
-          city: geo.city || '',
-          region: geo.region || '',
-          country: geo.country || '',
-          device: device.type || 'desktop',
-          browser: browser.name || '',
-          os: os.name || ''
-        }
-      }
-    );
-    console.log('✅ First real open/click, count set to 1');
+    console.log('✅ First real interaction — created with count = 1');
   } else {
-    // Subsequent interactions → increment count
+    // Increment count
     await Log.updateOne(
       { emailId, recipientId, type },
       {
@@ -441,9 +422,10 @@ async function logEvent(req, type) {
         }
       }
     );
-    console.log('🔁 Repeated open/click, count incremented');
+    console.log('🔁 Subsequent interaction — incremented count');
   }
 }
+
 
 
 
