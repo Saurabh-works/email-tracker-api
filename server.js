@@ -527,9 +527,6 @@
 // working 3
 // ..............................................................................................
 
-
-
-// === server.js ===
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -570,10 +567,8 @@ async function logEvent(req, type) {
   const ua = req.headers['user-agent'] || '';
   const { emailId, recipientId } = req.query;
 
-  console.log(`📩 ${type.toUpperCase()} hit:`, ua, 'IP:', ip, 'Recipient:', recipientId);
-
   if (!emailId || !recipientId || isBot(ua)) {
-    console.log('⚠️ Skipped logging due to bot or missing data');
+    console.log('⚠️ Skipped bot or missing data');
     return;
   }
 
@@ -600,7 +595,6 @@ async function logEvent(req, type) {
       browser: browser.name || '',
       os: os.name || ''
     });
-    console.log('✅ First real interaction — created with count = 1');
   } else {
     await Log.updateOne(
       { emailId, recipientId, type },
@@ -618,7 +612,6 @@ async function logEvent(req, type) {
         }
       }
     );
-    console.log('🔁 Subsequent interaction — incremented count');
   }
 }
 
@@ -641,25 +634,15 @@ app.get('/track-click', async (req, res) => {
 app.get('/send-email', async (req, res) => {
   const { to, subject, body, campaignId } = req.query;
   const emailId = campaignId || 'campaign-lite';
-  if (!to || !subject || !body) return res.status(400).json({ error: 'Missing fields' });
+  if (!to || !subject || !body || !emailId) return res.status(400).json({ error: 'Missing fields' });
 
   const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
   const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
-
-  const segmentPayload = {
-    writeKey: process.env.SEGMENT_WRITE_KEY,
-    userId: encodeURIComponent(to),
-    event: "Email Opened",
-    properties: { subject, email: to }
-  };
-  const segmentBase64 = Buffer.from(JSON.stringify(segmentPayload)).toString('base64');
-  const segmentPixelUrl = `https://api.segment.io/v1/pixel/track?data=${segmentBase64}`;
 
   const html = `
     <p>${body}</p>
     <p><a href="${clickUrl}">Click here</a></p>
     <img src="${pixelUrl}" width="1" height="1" style="display:none;" />
-    <img src="${segmentPixelUrl}" width="1" height="1" style="display:none;" />
   `;
 
   const transporter = require('nodemailer').createTransport({
@@ -686,9 +669,12 @@ app.get('/campaign-analytics', async (req, res) => {
   const totalSent = recipients.length;
   const openRate = totalSent ? (uniqueOpens / totalSent) * 100 : 0;
   const clickRate = totalSent ? (uniqueClicks / totalSent) * 100 : 0;
-  const lastActivity = Math.max(...[...opens, ...clicks].map(l => l.timestamp.getTime()), 0);
+  const lastActivity = Math.max(...[...opens, ...clicks].map(l => l.timestamp?.getTime() || 0), 0);
 
-  res.json([{ emailId, totalSent, uniqueOpens, totalOpens, uniqueClicks, totalClicks, openRate, clickRate, lastActivity: lastActivity ? new Date(lastActivity) : null }]);
+  res.json([{
+    emailId, totalSent, uniqueOpens, totalOpens, uniqueClicks, totalClicks, openRate, clickRate,
+    lastActivity: lastActivity ? new Date(lastActivity) : null
+  }]);
 });
 
 app.get('/opens-summary', async (req, res) => {
@@ -702,7 +688,8 @@ app.get('/opens-summary', async (req, res) => {
 app.get('/clicks', async (req, res) => {
   const emailId = req.query.emailId;
   const data = await Log.find(emailId ? { emailId, type: 'click' } : { type: 'click' }, {
-    _id: 0, emailId: 1, recipientId: 1, ip: 1, city: 1, region: 1, country: 1, device: 1, browser: 1, os: 1, timestamp: 1
+    _id: 0, emailId: 1, recipientId: 1, ip: 1, city: 1, region: 1, country: 1,
+    device: 1, browser: 1, os: 1, timestamp: 1
   });
   res.json(data);
 });
