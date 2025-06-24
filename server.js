@@ -674,14 +674,14 @@ app.get('/send-email', async (req, res) => {
     port: parseInt(process.env.SES_PORT, 10),
     secure: false,
     auth: {
-      user: process.env.MAIL_USER,
-      pass: process.env.MAIL_PASS
+      user: process.env.MAIL_USER,   // your SMTP username (AKIA...)
+      pass: process.env.MAIL_PASS    // your SMTP password
     }
   });
 
   try {
     await transporter.sendMail({
-      from: process.env.MAIL_USER, // must match a verified SES email/domain
+      from: process.env.MAIL_FROM,  // ✅ must be a verified email in SES
       to,
       subject,
       html
@@ -692,6 +692,7 @@ app.get('/send-email', async (req, res) => {
     res.status(500).json({ error: 'Email sending failed' });
   }
 });
+
 
 
 app.get('/campaign-analytics', async (req, res) => {
