@@ -631,10 +631,34 @@ app.get('/track-click', async (req, res) => {
   res.redirect('https://demandmediabpm.com/');
 });
 
+// app.get('/send-email', async (req, res) => {
+//   const { to, subject, body, campaignId } = req.query;
+//   const emailId = campaignId || 'campaign-lite';
+//   if (!to || !subject || !body || !emailId) return res.status(400).json({ error: 'Missing fields' });
+
+//   const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
+//   const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
+
+//   const html = `
+//     <p>${body}</p>
+//     <p><a href="${clickUrl}">Click here</a></p>
+//     <img src="${pixelUrl}" width="1" height="1" style="display:none;" />
+//   `;
+
+//   const transporter = require('nodemailer').createTransport({
+//     service: 'gmail',
+//     auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS }
+//   });
+
+//   await transporter.sendMail({ from: process.env.MAIL_USER, to, subject, html });
+//   res.json({ message: 'Email sent' });
+// });
+
 app.get('/send-email', async (req, res) => {
   const { to, subject, body, campaignId } = req.query;
   const emailId = campaignId || 'campaign-lite';
-  if (!to || !subject || !body || !emailId) return res.status(400).json({ error: 'Missing fields' });
+  if (!to || !subject || !body || !emailId)
+    return res.status(400).json({ error: 'Missing fields' });
 
   const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
   const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
@@ -646,13 +670,29 @@ app.get('/send-email', async (req, res) => {
   `;
 
   const transporter = require('nodemailer').createTransport({
-    service: 'gmail',
-    auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS }
+    host: process.env.SES_HOST,
+    port: parseInt(process.env.SES_PORT, 10),
+    secure: false,
+    auth: {
+      user: process.env.MAIL_USER,
+      pass: process.env.MAIL_PASS
+    }
   });
 
-  await transporter.sendMail({ from: process.env.MAIL_USER, to, subject, html });
-  res.json({ message: 'Email sent' });
+  try {
+    await transporter.sendMail({
+      from: process.env.MAIL_USER, // must match a verified SES email/domain
+      to,
+      subject,
+      html
+    });
+    res.json({ message: 'Email sent' });
+  } catch (err) {
+    console.error('SES Email Error:', err);
+    res.status(500).json({ error: 'Email sending failed' });
+  }
 });
+
 
 app.get('/campaign-analytics', async (req, res) => {
   const emailId = req.query.emailId || 'campaign-lite';
