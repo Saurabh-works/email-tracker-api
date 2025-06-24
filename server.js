@@ -533,6 +533,7 @@ const cors = require('cors');
 const requestIp = require('request-ip');
 const uaParser = require('ua-parser-js');
 const axios = require('axios');
+const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
 require('dotenv').config();
 
 const app = express();
@@ -559,6 +560,14 @@ const logSchema = new mongoose.Schema({
 });
 logSchema.index({ emailId: 1, recipientId: 1, type: 1 }, { unique: true });
 const Log = mongoose.model('Log', logSchema);
+
+const sesClient = new SESClient({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
 
 const isBot = ua => /bot|crawler|preview|headless/i.test(ua);
 
@@ -654,42 +663,86 @@ app.get('/track-click', async (req, res) => {
 //   res.json({ message: 'Email sent' });
 // });
 
+// app.get('/send-email', async (req, res) => {
+//   const { to, subject, body, campaignId } = req.query;
+//   const emailId = campaignId || 'campaign-lite';
+//   if (!to || !subject || !body || !emailId)
+//     return res.status(400).json({ error: 'Missing fields' });
+
+//   const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
+//   const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
+
+//   const html = `
+//     <p>${body}</p>
+//     <p><a href="${clickUrl}">Click here</a></p>
+//     <img src="${pixelUrl}" width="1" height="1" style="display:none;" />
+//   `;
+
+//   const transporter = require('nodemailer').createTransport({
+//     host: process.env.SES_HOST,
+//     port: parseInt(process.env.SES_PORT, 10),
+//     secure: false,
+//     auth: {
+//       user: process.env.MAIL_USER,   // your SMTP username (AKIA...)
+//       pass: process.env.MAIL_PASS    // your SMTP password
+//     }
+//   });
+
+//   try {
+//     await transporter.sendMail({
+//       from: process.env.MAIL_FROM,  // ✅ must be a verified email in SES
+//       to,
+//       subject,
+//       html
+//     });
+//     res.json({ message: 'Email sent' });
+//   } catch (err) {
+//     console.error('SES Email Error:', err);
+//     res.status(500).json({ error: 'Email sending failed' });
+//   }
+// });
+
 app.get('/send-email', async (req, res) => {
   const { to, subject, body, campaignId } = req.query;
   const emailId = campaignId || 'campaign-lite';
+
   if (!to || !subject || !body || !emailId)
     return res.status(400).json({ error: 'Missing fields' });
 
   const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${emailId}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
   const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${emailId}&recipientId=${encodeURIComponent(to)}`;
 
-  const html = `
+  const htmlBody = `
     <p>${body}</p>
     <p><a href="${clickUrl}">Click here</a></p>
     <img src="${pixelUrl}" width="1" height="1" style="display:none;" />
   `;
 
-  const transporter = require('nodemailer').createTransport({
-    host: process.env.SES_HOST,
-    port: parseInt(process.env.SES_PORT, 10),
-    secure: false,
-    auth: {
-      user: process.env.MAIL_USER,   // your SMTP username (AKIA...)
-      pass: process.env.MAIL_PASS    // your SMTP password
-    }
-  });
+  const params = {
+    Destination: {
+      ToAddresses: [to],
+    },
+    Message: {
+      Body: {
+        Html: {
+          Charset: "UTF-8",
+          Data: htmlBody,
+        }
+      },
+      Subject: {
+        Charset: "UTF-8",
+        Data: subject,
+      },
+    },
+    Source: process.env.MAIL_FROM,
+  };
 
   try {
-    await transporter.sendMail({
-      from: process.env.MAIL_FROM,  // ✅ must be a verified email in SES
-      to,
-      subject,
-      html
-    });
+    await sesClient.send(new SendEmailCommand(params));
     res.json({ message: 'Email sent' });
   } catch (err) {
-    console.error('SES Email Error:', err);
-    res.status(500).json({ error: 'Email sending failed' });
+    console.error('SES SDK Email Error:', err);
+    res.status(500).json({ error: 'Email sending failed', detail: err.message });
   }
 });
 
