@@ -229,7 +229,6 @@
 // app.listen(process.env.PORT || 3000, () => console.log('🚀 Server running'));
 
 // next
-
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -282,6 +281,20 @@ async function logEvent(req, type) {
   if (!emailId || !recipientId || isBot(ua)) {
     console.log('⚠️ Skipped bot or missing data');
     return;
+  }
+
+  // Prevent duplicate click logs within 5 seconds
+  if (type === 'click') {
+    const recentClick = await Log.findOne({
+      emailId,
+      recipientId,
+      type,
+      timestamp: { $gte: new Date(Date.now() - 5000) }
+    });
+    if (recentClick) {
+      console.log('🛑 Duplicate click within 5 seconds skipped');
+      return;
+    }
   }
 
   const { device, browser, os } = uaParser(ua);
@@ -416,3 +429,4 @@ app.get('/campaign-ids', async (_, res) => {
 });
 
 app.listen(process.env.PORT || 3000, () => console.log('🚀 Server running'));
+
