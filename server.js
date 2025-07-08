@@ -113,10 +113,36 @@ app.get("/track-pixel", async (req, res) => {
   res.end(pixel);
 });
 
+// app.get("/track-click", async (req, res) => {
+//   await logEvent(req, "click");
+//   res.redirect("https://demandmediabpm.com/");
+// });
 app.get("/track-click", async (req, res) => {
   await logEvent(req, "click");
+
+  // Fallback open logging
+  const { emailId, recipientId } = req.query;
+  if (emailId && recipientId) {
+    const existingOpen = await Log.findOne({ emailId, recipientId, type: 'open' });
+    if (!existingOpen) {
+      await Log.findOneAndUpdate(
+        { emailId, recipientId, type: 'open' },
+        {
+          $inc: { count: 1 },
+          $set: {
+            timestamp: new Date(),
+            ip: requestIp.getClientIp(req) || '',
+          },
+        },
+        { upsert: true }
+      );
+      console.log(`✅ Fallback open logged for ${recipientId}`);
+    }
+  }
+
   res.redirect("https://demandmediabpm.com/");
 });
+
 
 app.get("/send-email", async (req, res) => {
   const { to, subject, body, emailId } = req.query;
