@@ -198,5 +198,7 @@ app.get('/campaign-ids', async (_, res) => {
   res.json(ids);
 });
 
-app.listen(process.env.PORT || 3000, () => console.log('🚀 Server running'));
+// app.listen(process.env.PORT || 3000, () => console.log('🚀 Server running'));
+app.listen(5000, '0.0.0.0', () => console.log("Server running"));
+
 
