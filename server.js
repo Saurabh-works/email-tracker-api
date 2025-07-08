@@ -1,20 +1,21 @@
 // next
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const requestIp = require('request-ip');
-const uaParser = require('ua-parser-js');
-const axios = require('axios');
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+const requestIp = require("request-ip");
+const uaParser = require("ua-parser-js");
+const axios = require("axios");
 const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
-require('dotenv').config();
+require("dotenv").config();
 
 const app = express();
-app.use(cors()); 
+app.use(cors());
 app.use(express.json());
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ MongoDB connected'))
-  .catch(err => console.error('❌ MongoDB error:', err));
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("❌ MongoDB error:", err));
 
 const logSchema = new mongoose.Schema({
   emailId: String,
@@ -31,7 +32,7 @@ const logSchema = new mongoose.Schema({
   os: String,
 });
 logSchema.index({ emailId: 1, recipientId: 1, type: 1 }, { unique: true });
-const Log = mongoose.model('Log', logSchema);
+const Log = mongoose.model("Log", logSchema);
 
 const sesClient = new SESClient({
   region: process.env.AWS_REGION,
@@ -41,28 +42,28 @@ const sesClient = new SESClient({
   },
 });
 
-const isBot = ua => /bot|crawler|preview|headless/i.test(ua);
+const isBot = (ua) => /bot|crawler|preview|headless/i.test(ua);
 
 async function logEvent(req, type) {
-  const ip = requestIp.getClientIp(req) || '';
-  const ua = req.headers['user-agent'] || '';
+  const ip = requestIp.getClientIp(req) || "";
+  const ua = req.headers["user-agent"] || "";
   const { emailId, recipientId } = req.query;
 
   if (!emailId || !recipientId || isBot(ua)) {
-    console.log('⚠️ Skipped bot or missing data');
+    console.log("⚠️ Skipped bot or missing data");
     return;
   }
 
   // Prevent duplicate click logs within 5 seconds
-  if (type === 'click') {
+  if (type === "click") {
     const recentClick = await Log.findOne({
       emailId,
       recipientId,
       type,
-      timestamp: { $gte: new Date(Date.now() - 5000) }
+      timestamp: { $gte: new Date(Date.now() - 5000) },
     });
     if (recentClick) {
-      console.log('🛑 Duplicate click within 5 seconds skipped');
+      console.log("🛑 Duplicate click within 5 seconds skipped");
       return;
     }
   }
@@ -70,7 +71,11 @@ async function logEvent(req, type) {
   const { device, browser, os } = uaParser(ua);
   let geo = {};
   try {
-    geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
+    geo = (
+      await axios.get(
+        `https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`
+      )
+    ).data;
   } catch {}
 
   await Log.findOneAndUpdate(
@@ -80,44 +85,53 @@ async function logEvent(req, type) {
       $set: {
         timestamp: new Date(),
         ip,
-        city: geo.city || '',
-        region: geo.region || '',
-        country: geo.country || '',
-        device: device.type || 'desktop',
-        browser: browser.name || '',
-        os: os.name || ''
-      }
+        city: geo.city || "",
+        region: geo.region || "",
+        country: geo.country || "",
+        device: device.type || "desktop",
+        browser: browser.name || "",
+        os: os.name || "",
+      },
     },
     { upsert: true }
   );
 
-  console.log('📩 Logged Event:', { emailId, recipientId, type, ip });
+  console.log("📩 Logged Event:", { emailId, recipientId, type, ip });
 }
 
-app.get('/track-pixel', async (req, res) => {
-  await logEvent(req, 'open');
-  const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
+app.get("/track-pixel", async (req, res) => {
+  await logEvent(req, "open");
+  const pixel = Buffer.from(
+    "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+    "base64"
+  );
   res.writeHead(200, {
-    'Content-Type': 'image/gif',
-    'Content-Length': pixel.length,
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    "Content-Type": "image/gif",
+    "Content-Length": pixel.length,
+    "Cache-Control": "no-cache, no-store, must-revalidate",
   });
   res.end(pixel);
 });
 
-app.get('/track-click', async (req, res) => {
-  await logEvent(req, 'click');
-  res.redirect('https://demandmediabpm.com/');
+app.get("/track-click", async (req, res) => {
+  await logEvent(req, "click");
+  res.redirect("https://demandmediabpm.com/");
 });
 
-app.get('/send-email', async (req, res) => {
+app.get("/send-email", async (req, res) => {
   const { to, subject, body, emailId } = req.query;
 
   if (!to || !subject || !body || !emailId)
-    return res.status(400).json({ error: 'Missing fields' });
+    return res.status(400).json({ error: "Missing fields" });
 
-  const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${encodeURIComponent(emailId)}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
-  const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${encodeURIComponent(emailId)}&recipientId=${encodeURIComponent(to)}`;
+  // const pixelUrl = `https://email-tracker-api-um5p.onrender.com/track-pixel?emailId=${encodeURIComponent(emailId)}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
+  // const clickUrl = `https://email-tracker-api-um5p.onrender.com/track-click?emailId=${encodeURIComponent(emailId)}&recipientId=${encodeURIComponent(to)}`;
+  const pixelUrl = `http://3.94.184.229:5000/track-pixel?emailId=${encodeURIComponent(
+    emailId
+  )}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
+  const clickUrl = `http://3.94.184.229:5000/track-click?emailId=${encodeURIComponent(
+    emailId
+  )}&recipientId=${encodeURIComponent(to)}`;
 
   const htmlBody = `
     <p>${body}</p>
@@ -134,7 +148,7 @@ app.get('/send-email', async (req, res) => {
         Html: {
           Charset: "UTF-8",
           Data: htmlBody,
-        }
+        },
       },
       Subject: {
         Charset: "UTF-8",
@@ -146,19 +160,21 @@ app.get('/send-email', async (req, res) => {
 
   try {
     await sesClient.send(new SendEmailCommand(params));
-    res.json({ message: 'Email sent' });
+    res.json({ message: "Email sent" });
   } catch (err) {
-    console.error('SES SDK Email Error:', err);
-    res.status(500).json({ error: 'Email sending failed', detail: err.message });
+    console.error("SES SDK Email Error:", err);
+    res
+      .status(500)
+      .json({ error: "Email sending failed", detail: err.message });
   }
 });
 
-app.get('/campaign-analytics', async (req, res) => {
-  const emailId = req.query.emailId || 'campaign-lite';
+app.get("/campaign-analytics", async (req, res) => {
+  const emailId = req.query.emailId || "campaign-lite";
   const [opens, clicks, recipients] = await Promise.all([
-    Log.find({ emailId, type: 'open' }),
-    Log.find({ emailId, type: 'click' }),
-    Log.distinct('recipientId', { emailId })
+    Log.find({ emailId, type: "open" }),
+    Log.find({ emailId, type: "click" }),
+    Log.distinct("recipientId", { emailId }),
   ]);
 
   const uniqueOpens = opens.length;
@@ -168,37 +184,66 @@ app.get('/campaign-analytics', async (req, res) => {
   const totalSent = recipients.length;
   const openRate = totalSent ? (uniqueOpens / totalSent) * 100 : 0;
   const clickRate = totalSent ? (uniqueClicks / totalSent) * 100 : 0;
-  const lastActivity = Math.max(...[...opens, ...clicks].map(l => l.timestamp?.getTime() || 0), 0);
+  const lastActivity = Math.max(
+    ...[...opens, ...clicks].map((l) => l.timestamp?.getTime() || 0),
+    0
+  );
 
-  res.json([{
-    emailId, totalSent, uniqueOpens, totalOpens, uniqueClicks, totalClicks, openRate, clickRate,
-    lastActivity: lastActivity ? new Date(lastActivity) : null
-  }]);
+  res.json([
+    {
+      emailId,
+      totalSent,
+      uniqueOpens,
+      totalOpens,
+      uniqueClicks,
+      totalClicks,
+      openRate,
+      clickRate,
+      lastActivity: lastActivity ? new Date(lastActivity) : null,
+    },
+  ]);
 });
 
-app.get('/opens-summary', async (req, res) => {
+app.get("/opens-summary", async (req, res) => {
   const emailId = req.query.emailId;
-  const data = await Log.find(emailId ? { emailId, type: 'open' } : { type: 'open' }, {
-    _id: 0, emailId: 1, recipientId: 1, count: 1, timestamp: 1
-  });
+  const data = await Log.find(
+    emailId ? { emailId, type: "open" } : { type: "open" },
+    {
+      _id: 0,
+      emailId: 1,
+      recipientId: 1,
+      count: 1,
+      timestamp: 1,
+    }
+  );
   res.json(data);
 });
 
-app.get('/clicks', async (req, res) => {
+app.get("/clicks", async (req, res) => {
   const emailId = req.query.emailId;
-  const data = await Log.find(emailId ? { emailId, type: 'click' } : { type: 'click' }, {
-    _id: 0, emailId: 1, recipientId: 1, ip: 1, city: 1, region: 1, country: 1,
-    device: 1, browser: 1, os: 1, timestamp: 1
-  });
+  const data = await Log.find(
+    emailId ? { emailId, type: "click" } : { type: "click" },
+    {
+      _id: 0,
+      emailId: 1,
+      recipientId: 1,
+      ip: 1,
+      city: 1,
+      region: 1,
+      country: 1,
+      device: 1,
+      browser: 1,
+      os: 1,
+      timestamp: 1,
+    }
+  );
   res.json(data);
 });
 
-app.get('/campaign-ids', async (_, res) => {
-  const ids = await Log.distinct('emailId');
+app.get("/campaign-ids", async (_, res) => {
+  const ids = await Log.distinct("emailId");
   res.json(ids);
 });
 
 // app.listen(process.env.PORT || 3000, () => console.log('🚀 Server running'));
-app.listen(5000, '0.0.0.0', () => console.log("Server running"));
-
-
+app.listen(5000, "0.0.0.0", () => console.log("Server running"));
