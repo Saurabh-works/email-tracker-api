@@ -143,7 +143,6 @@
 //   res.redirect("https://demandmediabpm.com/");
 // });
 
-
 // app.get("/send-email", async (req, res) => {
 //   const { to, subject, body, emailId } = req.query;
 
@@ -273,8 +272,6 @@
 
 // // app.listen(process.env.PORT || 3000, () => console.log('🚀 Server running'));
 // app.listen(5000, "0.0.0.0", () => console.log("Server running"));
-
-
 
 // new code
 
@@ -531,8 +528,6 @@
 
 // app.listen(5000, "0.0.0.0", () => console.log("Server running"));
 
-
-
 // this is updated code
 
 // 📁 server.js (updated with full email tracking + campaign logic)
@@ -551,8 +546,8 @@ const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
 
 // ⬇️ Load your self-signed cert
 const sslOptions = {
-  key: fs.readFileSync("/home/ec2-user/ssl/localhost-key.pem"),  // Update path as per your setup
-  cert: fs.readFileSync("/home/ec2-user/ssl/localhost-cert.pem"),
+  key: fs.readFileSync("/home/ubuntu/ssl/localhost-key.pem"),
+  cert: fs.readFileSync("/home/ubuntu/ssl/localhost-cert.pem"),
 };
 
 const app = express();
@@ -564,10 +559,13 @@ mongoose
   .then(() => console.log("✅ Contact DB connected"))
   .catch((err) => console.error("❌ Contact DB error:", err));
 
-const campaignConn = mongooseCampaign.createConnection(process.env.CAMPAIGN_DB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
+const campaignConn = mongooseCampaign.createConnection(
+  process.env.CAMPAIGN_DB_URI,
+  {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  }
+);
 campaignConn.on("connected", () => console.log("✅ Campaign DB connected"));
 
 const logSchema = new mongooseCampaign.Schema({
@@ -587,7 +585,11 @@ const logSchema = new mongooseCampaign.Schema({
 logSchema.index({ emailId: 1, recipientId: 1, type: 1 }, { unique: true });
 const Log = campaignConn.model("Log", logSchema);
 
-const contactSchema = new mongoose.Schema({ name: String, email: String, listName: String });
+const contactSchema = new mongoose.Schema({
+  name: String,
+  email: String,
+  listName: String,
+});
 const Contact = mongoose.model("Contact", contactSchema);
 
 const sesClient = new SESClient({
@@ -619,7 +621,11 @@ async function logEvent(req, type) {
   const { device, browser, os } = uaParser(ua);
   let geo = {};
   try {
-    geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
+    geo = (
+      await axios.get(
+        `https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`
+      )
+    ).data;
   } catch {}
 
   await Log.findOneAndUpdate(
@@ -643,7 +649,10 @@ async function logEvent(req, type) {
 
 app.get("/track-pixel", async (req, res) => {
   await logEvent(req, "open");
-  const pixel = Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64");
+  const pixel = Buffer.from(
+    "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+    "base64"
+  );
   res.writeHead(200, {
     "Content-Type": "image/gif",
     "Content-Length": pixel.length,
@@ -656,11 +665,18 @@ app.get("/track-click", async (req, res) => {
   await logEvent(req, "click");
   const { emailId, recipientId } = req.query;
   if (emailId && recipientId) {
-    const existingOpen = await Log.findOne({ emailId, recipientId, type: "open" });
+    const existingOpen = await Log.findOne({
+      emailId,
+      recipientId,
+      type: "open",
+    });
     if (!existingOpen) {
       await Log.findOneAndUpdate(
         { emailId, recipientId, type: "open" },
-        { $inc: { count: 1 }, $set: { timestamp: new Date(), ip: requestIp.getClientIp(req) || "" } },
+        {
+          $inc: { count: 1 },
+          $set: { timestamp: new Date(), ip: requestIp.getClientIp(req) || "" },
+        },
         { upsert: true }
       );
     }
@@ -670,21 +686,30 @@ app.get("/track-click", async (req, res) => {
 
 app.post("/send-campaign", async (req, res) => {
   const { emailId, subject, body, listName } = req.body;
-  if (!emailId || !subject || !body || !listName) return res.status(400).json({ error: "Missing fields" });
+  if (!emailId || !subject || !body || !listName)
+    return res.status(400).json({ error: "Missing fields" });
 
   try {
     const recipients = await Contact.find({ listName });
-    if (!recipients.length) return res.status(404).json({ error: "No recipients found" });
+    if (!recipients.length)
+      return res.status(404).json({ error: "No recipients found" });
 
     const results = [];
     for (const { email: to } of recipients) {
-      const pixelUrl = `http://3.94.184.229:5000/track-pixel?emailId=${encodeURIComponent(emailId)}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
-      const clickUrl = `http://3.94.184.229:5000/track-click?emailId=${encodeURIComponent(emailId)}&recipientId=${encodeURIComponent(to)}`;
+      const pixelUrl = `http://3.94.184.229:5000/track-pixel?emailId=${encodeURIComponent(
+        emailId
+      )}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
+      const clickUrl = `http://3.94.184.229:5000/track-click?emailId=${encodeURIComponent(
+        emailId
+      )}&recipientId=${encodeURIComponent(to)}`;
       const htmlBody = `<p>${body}</p><p><a href="${clickUrl}">Click here</a></p><img src="${pixelUrl}" width="1" height="1" style="display:none;" />`;
 
       const params = {
         Destination: { ToAddresses: [to] },
-        Message: { Body: { Html: { Charset: "UTF-8", Data: htmlBody } }, Subject: { Charset: "UTF-8", Data: subject } },
+        Message: {
+          Body: { Html: { Charset: "UTF-8", Data: htmlBody } },
+          Subject: { Charset: "UTF-8", Data: subject },
+        },
         Source: process.env.MAIL_FROM,
       };
 
@@ -722,9 +747,22 @@ app.get("/campaign-analytics", async (req, res) => {
   const totalSent = recipients.length;
   const openRate = totalSent ? (uniqueOpens / totalSent) * 100 : 0;
   const clickRate = totalSent ? (uniqueClicks / totalSent) * 100 : 0;
-  const lastActivity = Math.max(...[...opens, ...clicks].map((l) => l.timestamp?.getTime() || 0), 0);
+  const lastActivity = Math.max(
+    ...[...opens, ...clicks].map((l) => l.timestamp?.getTime() || 0),
+    0
+  );
 
-  res.json({ emailId, totalSent, uniqueOpens, totalOpens, uniqueClicks, totalClicks, openRate, clickRate, lastActivity: lastActivity ? new Date(lastActivity) : null });
+  res.json({
+    emailId,
+    totalSent,
+    uniqueOpens,
+    totalOpens,
+    uniqueClicks,
+    totalClicks,
+    openRate,
+    clickRate,
+    lastActivity: lastActivity ? new Date(lastActivity) : null,
+  });
 });
 
 app.get("/campaign-details", async (req, res) => {
@@ -734,7 +772,20 @@ app.get("/campaign-details", async (req, res) => {
   for (const log of logs) {
     const r = log.recipientId;
     if (!details[r]) {
-      details[r] = { emailId, recipient: r, ip: "NA", city: "NA", region: "NA", country: "NA", device: "NA", browser: "NA", os: "NA", totalOpen: 0, totalClick: 0, lastClick: "NA" };
+      details[r] = {
+        emailId,
+        recipient: r,
+        ip: "NA",
+        city: "NA",
+        region: "NA",
+        country: "NA",
+        device: "NA",
+        browser: "NA",
+        os: "NA",
+        totalOpen: 0,
+        totalClick: 0,
+        lastClick: "NA",
+      };
     }
     if (log.type === "open") details[r].totalOpen += log.count;
     if (log.type === "click") {
