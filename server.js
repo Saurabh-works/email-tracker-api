@@ -586,6 +586,11 @@ const logSchema = new mongooseCampaign.Schema({
 logSchema.index({ emailId: 1, recipientId: 1, type: 1 }, { unique: true });
 const Log = campaignConn.model("Log", logSchema);
 
+// just for DEBUG
+Log.countDocuments()
+  .then(count => console.log("✅ Logs document count:", count))
+  .catch(err => console.error("❌ Failed to count logs:", err));
+
 const contactSchema = new mongoose.Schema({
   name: String,
   email: String,
@@ -822,6 +827,15 @@ app.get("/contact-lists", async (_, res) => {
 //   console.log("🔒 HTTPS server running on port 5000");
 // });
 
-http.createServer(app).listen(5000, "0.0.0.0", () => {
-  console.log("🌐 HTTP server running on port 5000");
+// http.createServer(app).listen(5000, "0.0.0.0", () => {
+//   console.log("🌐 HTTP server running on port 5000");
+// });
+
+
+campaignConn.once("open", () => {
+  console.log("✅ Campaign DB fully ready");
+
+  http.createServer(app).listen(5000, "0.0.0.0", () => {
+    console.log("🌐 HTTP server running on port 5000");
+  });
 });
