@@ -533,10 +533,11 @@
 // 📁 server.js (updated with full email tracking + campaign logic)
 // 📁 server.js
 require("dotenv").config();
-const fs = require("fs");
-const https = require("https");
+// const fs = require("fs");
+// const https = require("https");
 const express = require("express");
 const mongoose = require("mongoose");
+const http = require("http");
 const mongooseCampaign = require("mongoose");
 const cors = require("cors");
 const requestIp = require("request-ip");
@@ -545,10 +546,10 @@ const axios = require("axios");
 const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
 
 // ⬇️ Load your self-signed cert
-const sslOptions = {
-  key: fs.readFileSync("/home/ubuntu/ssl/localhost-key.pem"),
-  cert: fs.readFileSync("/home/ubuntu/ssl/localhost-cert.pem"),
-};
+// const sslOptions = {
+//   key: fs.readFileSync("/home/ubuntu/ssl/localhost-key.pem"),
+//   cert: fs.readFileSync("/home/ubuntu/ssl/localhost-cert.pem"),
+// };
 
 const app = express();
 app.use(cors());
@@ -808,6 +809,10 @@ app.get("/contact-lists", async (_, res) => {
   res.json(listNames);
 });
 
-https.createServer(sslOptions, app).listen(5000, "0.0.0.0", () => {
-  console.log("🔒 HTTPS server running on port 5000");
+// https.createServer(sslOptions, app).listen(5000, "0.0.0.0", () => {
+//   console.log("🔒 HTTPS server running on port 5000");
+// });
+
+http.createServer(app).listen(5000, "0.0.0.0", () => {
+  console.log("🌐 HTTP server running on port 5000");
 });
