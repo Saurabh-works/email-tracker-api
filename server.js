@@ -593,6 +593,10 @@ const contactSchema = new mongoose.Schema({
 });
 const Contact = mongoose.model("Contact", contactSchema);
 
+Contact.countDocuments()
+  .then(count => console.log("✅ Contact documents count:", count))
+  .catch(err => console.error("❌ Failed to count contacts:", err));
+
 const sesClient = new SESClient({
   region: process.env.AWS_REGION,
   credentials: {
@@ -805,8 +809,13 @@ app.get("/campaign-details", async (req, res) => {
 });
 
 app.get("/contact-lists", async (_, res) => {
-  const listNames = await Contact.distinct("listName");
-  res.json(listNames);
+  try {
+    const listNames = await Contact.distinct("listName");
+    res.json(listNames);
+  } catch (err) {
+    console.error("❌ /contact-lists error:", err.message);
+    res.status(500).json({ error: "Server error", message: err.message });
+  }
 });
 
 // https.createServer(sslOptions, app).listen(5000, "0.0.0.0", () => {
