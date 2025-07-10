@@ -528,47 +528,61 @@
 
 // app.listen(5000, "0.0.0.0", () => console.log("Server running"));
 
-// this is updated code
 
-// 📁 server.js (updated with full email tracking + campaign logic)
-// 📁 server.js
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// this is new code
 require("dotenv").config();
-// const fs = require("fs");
-// const https = require("https");
 const express = require("express");
 const mongoose = require("mongoose");
-const http = require("http");
 const mongooseCampaign = require("mongoose");
+const http = require("http");
 const cors = require("cors");
 const requestIp = require("request-ip");
 const uaParser = require("ua-parser-js");
 const axios = require("axios");
 const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
 
-// ⬇️ Load your self-signed cert
-// const sslOptions = {
-//   key: fs.readFileSync("/home/ubuntu/ssl/localhost-key.pem"),
-//   cert: fs.readFileSync("/home/ubuntu/ssl/localhost-cert.pem"),
-// };
-
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose
-  .connect(process.env.CONTACT_MONGO_URI)
-  .then(() => console.log("✅ Contact DB connected"))
-  .catch((err) => console.error("❌ Contact DB error:", err));
+// 🔗 Connect to contact DB (used to store collections)
+const contactConn = mongoose.createConnection(process.env.MONGO_URI_CONTACT, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
+contactConn.on("connected", () => console.log("✅ Contact DB connected"));
 
-const campaignConn = mongooseCampaign.createConnection(
-  process.env.CAMPAIGN_DB_URI,
-  {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  }
-);
+// 🔗 Connect to campaign DB
+const campaignConn = mongooseCampaign.createConnection(process.env.CAMPAIGN_DB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
 campaignConn.on("connected", () => console.log("✅ Campaign DB connected"));
 
+// 📊 Campaign log schema
 const logSchema = new mongooseCampaign.Schema({
   emailId: String,
   recipientId: String,
@@ -585,22 +599,6 @@ const logSchema = new mongooseCampaign.Schema({
 });
 logSchema.index({ emailId: 1, recipientId: 1, type: 1 }, { unique: true });
 const Log = campaignConn.model("Log", logSchema);
-
-// just for DEBUG
-Log.countDocuments()
-  .then(count => console.log("✅ Logs document count:", count))
-  .catch(err => console.error("❌ Failed to count logs:", err));
-
-const contactSchema = new mongoose.Schema({
-  name: String,
-  email: String,
-  listName: String,
-});
-const Contact = mongoose.model("Contact", contactSchema);
-
-Contact.countDocuments()
-  .then(count => console.log("✅ Contact documents count:", count))
-  .catch(err => console.error("❌ Failed to count contacts:", err));
 
 const sesClient = new SESClient({
   region: process.env.AWS_REGION,
@@ -631,11 +629,7 @@ async function logEvent(req, type) {
   const { device, browser, os } = uaParser(ua);
   let geo = {};
   try {
-    geo = (
-      await axios.get(
-        `https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`
-      )
-    ).data;
+    geo = (await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`)).data;
   } catch {}
 
   await Log.findOneAndUpdate(
@@ -657,12 +651,10 @@ async function logEvent(req, type) {
   );
 }
 
+// 📌 Track pixel
 app.get("/track-pixel", async (req, res) => {
   await logEvent(req, "open");
-  const pixel = Buffer.from(
-    "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
-    "base64"
-  );
+  const pixel = Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64");
   res.writeHead(200, {
     "Content-Type": "image/gif",
     "Content-Length": pixel.length,
@@ -671,8 +663,10 @@ app.get("/track-pixel", async (req, res) => {
   res.end(pixel);
 });
 
+// 📌 Track click
 app.get("/track-click", async (req, res) => {
   await logEvent(req, "click");
+
   const { emailId, recipientId } = req.query;
   if (emailId && recipientId) {
     const existingOpen = await Log.findOne({
@@ -691,21 +685,27 @@ app.get("/track-click", async (req, res) => {
       );
     }
   }
+
   res.redirect("https://demandmediabpm.com/");
 });
 
+// ✅ ✅ ✅ Modified: send to dynamic collection emails
 app.post("/send-campaign", async (req, res) => {
   const { emailId, subject, body, listName } = req.body;
   if (!emailId || !subject || !body || !listName)
     return res.status(400).json({ error: "Missing fields" });
 
   try {
-    const recipients = await Contact.find({ listName });
+    const ContactModel = contactConn.model(listName, new mongoose.Schema({}, { strict: false }), listName);
+    const recipients = await ContactModel.find({}, { Email: 1 });
+
     if (!recipients.length)
-      return res.status(404).json({ error: "No recipients found" });
+      return res.status(404).json({ error: "No recipients found in that collection" });
 
     const results = [];
-    for (const { email: to } of recipients) {
+    for (const { Email: to } of recipients) {
+      if (!to) continue;
+
       const pixelUrl = `http://3.94.184.229:5000/track-pixel?emailId=${encodeURIComponent(
         emailId
       )}&recipientId=${encodeURIComponent(to)}&t=${Date.now()}`;
@@ -733,10 +733,12 @@ app.post("/send-campaign", async (req, res) => {
 
     res.json({ message: `Campaign ${emailId} sent`, results });
   } catch (err) {
+    console.error("❌ /send-campaign error:", err);
     res.status(500).json({ error: "Failed to send campaign" });
   }
 });
 
+// ✅ Campaign analytics
 app.get("/campaign-ids", async (_, res) => {
   const ids = await Log.distinct("emailId");
   res.json(ids);
@@ -775,6 +777,7 @@ app.get("/campaign-analytics", async (req, res) => {
   });
 });
 
+// ✅ Campaign details
 app.get("/campaign-details", async (req, res) => {
   const emailId = req.query.emailId;
   const logs = await Log.find({ emailId });
@@ -813,28 +816,21 @@ app.get("/campaign-details", async (req, res) => {
   res.json(Object.values(details));
 });
 
+// ✅ New: fetch collection names (contact lists)
 app.get("/contact-lists", async (_, res) => {
   try {
-    const listNames = await Contact.distinct("listName");
-    res.json(listNames);
+    const collections = await contactConn.db.listCollections().toArray();
+    const names = collections.map((c) => c.name);
+    res.json(names);
   } catch (err) {
     console.error("❌ /contact-lists error:", err.message);
     res.status(500).json({ error: "Server error", message: err.message });
   }
 });
 
-// https.createServer(sslOptions, app).listen(5000, "0.0.0.0", () => {
-//   console.log("🔒 HTTPS server running on port 5000");
-// });
-
-// http.createServer(app).listen(5000, "0.0.0.0", () => {
-//   console.log("🌐 HTTP server running on port 5000");
-// });
-
-
+// 🔁 Start HTTP server
 campaignConn.once("open", () => {
   console.log("✅ Campaign DB fully ready");
-
   http.createServer(app).listen(5000, "0.0.0.0", () => {
     console.log("🌐 HTTP server running on port 5000");
   });
